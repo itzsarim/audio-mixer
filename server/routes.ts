@@ -15,8 +15,11 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024, // 100MB limit
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3"];
-    if (allowedTypes.includes(file.mimetype)) {
+    // Check file extension as primary filter
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = [".mp3", ".wav"];
+    
+    if (allowedExtensions.includes(fileExtension)) {
       cb(null, true);
     } else {
       cb(new Error("Only MP3 and WAV files are allowed"));

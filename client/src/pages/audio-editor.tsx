@@ -46,17 +46,24 @@ export default function AudioEditor() {
       });
 
       xhr.addEventListener("load", () => {
-        if (xhr.status === 200) {
-          const result = JSON.parse(xhr.responseText);
-          setAudioFile(result);
-          setCurrentStep(2);
-        }
         setIsUploading(false);
+        if (xhr.status === 200) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            console.log("Upload successful:", result);
+            setAudioFile(result);
+            setCurrentStep(2);
+          } catch (error) {
+            console.error("Failed to parse upload response:", error, xhr.responseText);
+          }
+        } else {
+          console.error("Upload failed with status:", xhr.status, xhr.responseText);
+        }
       });
 
       xhr.addEventListener("error", () => {
         setIsUploading(false);
-        console.error("Upload failed");
+        console.error("Upload network error");
       });
 
       xhr.open("POST", "/api/upload");
@@ -360,7 +367,7 @@ export default function AudioEditor() {
         )}
 
         {/* Download Section */}
-        {processingJob && processingJob.status === "completed" && (
+        {processingJob && 'status' in processingJob && processingJob.status === "completed" && (
           <Card>
             <CardContent className="p-6">
               <div className="text-center space-y-6">
@@ -385,7 +392,7 @@ export default function AudioEditor() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Button onClick={() => downloadAudio(processingJob.id)}>
+                  <Button onClick={() => 'id' in processingJob && downloadAudio(processingJob.id)}>
                     <Download className="h-4 w-4 mr-2" />
                     Download Audio
                   </Button>
