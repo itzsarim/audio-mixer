@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Clock, CheckCircle, AlertCircle, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,27 +9,25 @@ interface SegmentManagerProps {
   segments: Array<{ startTime: number; endTime: number }>;
   onSegmentsChange: (segments: Array<{ startTime: number; endTime: number }>) => void;
   audioDuration: number;
+  onProceedToNext?: () => void;
 }
 
 export default function SegmentManager({
   segments,
   onSegmentsChange,
   audioDuration,
+  onProceedToNext,
 }: SegmentManagerProps) {
   const [errors, setErrors] = useState<Record<number, string>>({});
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+    return { mins, secs };
   };
 
-  const parseTime = (timeStr: string): number => {
-    const parts = timeStr.split(":");
-    if (parts.length !== 2) return 0;
-    const mins = parseInt(parts[0], 10) || 0;
-    const secs = parseInt(parts[1], 10) || 0;
-    return mins * 60 + secs;
+  const parseTime = (mins: number, secs: number): number => {
+    return (mins || 0) * 60 + (secs || 0);
   };
 
   const validateSegments = (newSegments: Array<{ startTime: number; endTime: number }>) => {
@@ -93,8 +91,21 @@ export default function SegmentManager({
     validateSegments(newSegments);
   };
 
-  const updateSegment = (index: number, field: "startTime" | "endTime", value: string) => {
-    const timeValue = parseTime(value);
+  const updateSegment = (index: number, field: "startTime" | "endTime", timeType: "mins" | "secs", value: string) => {
+    const numValue = parseInt(value) || 0;
+    const currentSegment = segments[index];
+    const currentTime = formatTime(currentSegment[field]);
+    
+    let newMins = currentTime.mins;
+    let newSecs = currentTime.secs;
+    
+    if (timeType === "mins") {
+      newMins = numValue;
+    } else {
+      newSecs = Math.min(59, Math.max(0, numValue)); // Clamp seconds to 0-59
+    }
+    
+    const timeValue = parseTime(newMins, newSecs);
     const newSegments = segments.map((segment, i) =>
       i === index ? { ...segment, [field]: timeValue } : segment
     );
@@ -104,6 +115,11 @@ export default function SegmentManager({
 
   const isAllValid = Object.keys(errors).length === 0 && segments.length > 0;
   const totalDuration = segments.reduce((sum, segment) => sum + (segment.endTime - segment.startTime), 0);
+  
+  const formatTimeDisplay = (seconds: number) => {
+    const { mins, secs } = formatTime(seconds);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   return (
     <Card className="mb-8">
@@ -156,37 +172,71 @@ export default function SegmentManager({
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor={`start-${index}`} className="text-sm font-medium text-gray-700 mb-2 flex items-center space-x-1">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
                       <span>Start Time</span>
                     </Label>
-                    <Input
-                      id={`start-${index}`}
-                      type="text"
-                      placeholder="00:15"
-                      value={formatTime(segment.startTime)}
-                      onChange={(e) => updateSegment(index, "startTime", e.target.value)}
-                      className="font-mono text-sm"
-                    />
+                    <div className="flex space-x-2">
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          value={formatTime(segment.startTime).mins}
+                          onChange={(e) => updateSegment(index, "startTime", "mins", e.target.value)}
+                          className="font-mono text-sm text-center"
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block text-center">min</span>
+                      </div>
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          max="59"
+                          value={formatTime(segment.startTime).secs}
+                          onChange={(e) => updateSegment(index, "startTime", "secs", e.target.value)}
+                          className="font-mono text-sm text-center"
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block text-center">sec</span>
+                      </div>
+                    </div>
                   </div>
                   <div>
-                    <Label htmlFor={`end-${index}`} className="text-sm font-medium text-gray-700 mb-2 flex items-center space-x-1">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
                       <span>End Time</span>
                     </Label>
-                    <Input
-                      id={`end-${index}`}
-                      type="text"
-                      placeholder="00:45"
-                      value={formatTime(segment.endTime)}
-                      onChange={(e) => updateSegment(index, "endTime", e.target.value)}
-                      className="font-mono text-sm"
-                    />
+                    <div className="flex space-x-2">
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          value={formatTime(segment.endTime).mins}
+                          onChange={(e) => updateSegment(index, "endTime", "mins", e.target.value)}
+                          className="font-mono text-sm text-center"
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block text-center">min</span>
+                      </div>
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          max="59"
+                          value={formatTime(segment.endTime).secs}
+                          onChange={(e) => updateSegment(index, "endTime", "secs", e.target.value)}
+                          className="font-mono text-sm text-center"
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block text-center">sec</span>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-700 mb-2">Duration</Label>
-                    <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg font-mono text-sm text-gray-600">
-                      {formatTime(duration)}
+                    <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg font-mono text-sm text-gray-600 text-center">
+                      {formatTimeDisplay(duration)}
                     </div>
                   </div>
                 </div>
@@ -228,9 +278,24 @@ export default function SegmentManager({
               </div>
               {isAllValid && (
                 <div className="mt-2 text-sm text-green-700">
-                  Total output duration: {formatTime(totalDuration)} • No overlapping segments
+                  Total output duration: {formatTimeDisplay(totalDuration)} • No overlapping segments
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Call to Action */}
+          {isAllValid && segments.length > 0 && onProceedToNext && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+                <div className="text-sm text-gray-600 text-center sm:text-left">
+                  Ready to proceed with <span className="font-medium">{segments.length} segments</span>
+                </div>
+                <Button onClick={onProceedToNext} className="bg-primary hover:bg-primary/90 w-full sm:w-auto">
+                  <span>Configure Output</span>
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </div>
           )}
         </div>

@@ -133,9 +133,9 @@ export default function AudioEditor() {
               <div className="bg-primary text-white p-2 rounded-lg">
                 <Music className="h-6 w-6" />
               </div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">Audio Cut & Mix</h1>
-                <p className="text-sm text-gray-500">Professional audio editing tool</p>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">Audio Cut & Mix</h1>
+                <p className="text-xs sm:text-sm text-gray-500 hidden sm:block">Professional audio editing tool</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -147,7 +147,7 @@ export default function AudioEditor() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Progress Steps */}
         <ProgressSteps currentStep={currentStep} />
 
@@ -155,14 +155,15 @@ export default function AudioEditor() {
         {currentStep >= 1 && (
           <Card className="mb-8">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Upload Audio File</h2>
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">Upload Audio File</h2>
                   <p className="text-sm text-gray-600 mt-1">Supported formats: MP3, WAV (max 60 minutes)</p>
                 </div>
-                <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
                   <Shield className="h-4 w-4" />
-                  <span>Files are processed securely and not stored</span>
+                  <span className="hidden sm:inline">Files are processed securely and not stored</span>
+                  <span className="sm:hidden">Secure processing</span>
                 </div>
               </div>
 
@@ -243,6 +244,7 @@ export default function AudioEditor() {
             segments={segments}
             onSegmentsChange={setSegments}
             audioDuration={audioFile.duration}
+            onProceedToNext={() => setCurrentStep(3)}
           />
         )}
 

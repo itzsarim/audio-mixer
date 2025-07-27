@@ -96,3 +96,16 @@ Located in `shared/schema.ts`, the application uses three main tables:
 4. **Type-Safe API**: Shared schema definitions ensure API contract consistency
 5. **Modular Components**: Highly reusable UI components following atomic design principles
 6. **Error Boundaries**: Comprehensive error handling throughout the application stack
+
+## Recent Changes
+
+### July 27, 2025 - Mobile Responsiveness & UX Improvements
+- **Fixed file upload validation**: Changed from MIME type to file extension checking for better compatibility
+- **Improved timestamp input**: Replaced single time input with separate minute/second number fields for easier mobile entry
+- **Added mobile responsiveness**: 
+  - Responsive header with truncated text and hidden subtitle on mobile
+  - Mobile-friendly progress steps with smaller spacing and horizontal scroll
+  - Responsive upload section with stacked layout on mobile
+  - Mobile-optimized segment manager with better touch targets
+- **Enhanced user flow**: Added "Configure Output" call-to-action button to proceed to next step after segment selection
+- **Better input validation**: Seconds input now clamps to 0-59 range automatically
