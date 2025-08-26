@@ -105,6 +105,19 @@ export default function MarkerManager({
     }
   };
 
+  const handleRegeneratePreview = () => {
+    // Reset preview state
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+      setIsPreviewPlaying(false);
+    }
+    setPreviewAudioUrl(null);
+    
+    // Generate new preview
+    handlePreviewMix();
+  };
+
   const handleGenerateAudio = async () => {
     if (!isEvenMarkers || segmentCount < 1) {
       toast({
@@ -633,6 +646,17 @@ export default function MarkerManager({
                         >
                           <Square className="h-3 w-3" />
                           <span>Stop</span>
+                        </Button>
+                        <Button 
+                          onClick={handleRegeneratePreview}
+                          variant="outline"
+                          size="sm"
+                          disabled={isPreviewLoading}
+                          className="flex items-center justify-center space-x-1"
+                          data-testid="button-regenerate-preview"
+                        >
+                          <Volume2 className="h-3 w-3" />
+                          <span>{isPreviewLoading ? "Generating..." : "Regenerate"}</span>
                         </Button>
                       </div>
                     )}
