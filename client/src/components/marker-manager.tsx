@@ -36,6 +36,8 @@ export default function MarkerManager({
   const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement>(null);
+  const [outputMode, setOutputMode] = useState<"direct" | "crossfade">("direct");
+  const [crossfadeDuration, setCrossfadeDuration] = useState(1.0);
   const { toast } = useToast();
 
   const formatTime = (seconds: number) => {
@@ -132,8 +134,8 @@ export default function MarkerManager({
         body: JSON.stringify({
           audioFileId,
           markers: sortedMarkers,
-          outputMode: "crossfade",
-          crossfadeDuration: 1.0,
+          outputMode,
+          crossfadeDuration,
         }),
       });
 
@@ -197,7 +199,8 @@ export default function MarkerManager({
         body: JSON.stringify({
           audioFileId,
           markers: sortedMarkers,
-          crossfadeDuration: 1.0,
+          outputMode,
+          crossfadeDuration,
         }),
       });
 
@@ -499,6 +502,90 @@ export default function MarkerManager({
                 </div>
               )}
             </div>
+
+            {/* Output Mode Selection */}
+            {isEvenMarkers && segmentCount >= 1 && (
+              <div className="pt-4 border-t border-gray-200">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Mix Output Mode</h3>
+                  <p className="text-sm text-gray-600">Choose how segments should be joined together</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  {/* Direct mixing */}
+                  <div
+                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                      outputMode === "direct" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                    }`}
+                    onClick={() => setOutputMode("direct")}
+                  >
+                    <label className="flex items-start space-x-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="outputMode"
+                        value="direct"
+                        checked={outputMode === "direct"}
+                        onChange={() => setOutputMode("direct")}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium text-gray-900">Direct Mix</h4>
+                          <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-medium">Default</span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Segments are joined together directly without transitions. Clean cuts with immediate switches.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Crossfade mixing */}
+                  <div
+                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                      outputMode === "crossfade" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                    }`}
+                    onClick={() => setOutputMode("crossfade")}
+                  >
+                    <label className="flex items-start space-x-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="outputMode"
+                        value="crossfade"
+                        checked={outputMode === "crossfade"}
+                        onChange={() => setOutputMode("crossfade")}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium text-gray-900">Crossfade Mix</h4>
+                          <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">Optional</span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Segments blend with smooth crossfade transitions. Creates seamless flow between segments.
+                        </p>
+                        {outputMode === "crossfade" && (
+                          <div className="mt-3 flex items-center space-x-3">
+                            <label className="text-xs font-medium text-gray-700">Fade Duration:</label>
+                            <select
+                              value={crossfadeDuration}
+                              onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
+                              className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value={0.5}>0.5 seconds</option>
+                              <option value={1.0}>1.0 seconds</option>
+                              <option value={1.5}>1.5 seconds</option>
+                              <option value={2.0}>2.0 seconds</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex flex-col space-y-4 pt-4 border-t border-gray-200">
