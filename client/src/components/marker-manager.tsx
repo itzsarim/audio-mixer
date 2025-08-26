@@ -43,16 +43,17 @@ export default function MarkerManager({
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return { mins, secs };
+    const ms = Math.round((seconds % 1) * 1000);
+    return { mins, secs, ms };
   };
 
-  const parseTime = (mins: number, secs: number): number => {
-    return (mins || 0) * 60 + (secs || 0);
+  const parseTime = (mins: number, secs: number, ms: number = 0): number => {
+    return (mins || 0) * 60 + (secs || 0) + (ms || 0) / 1000;
   };
 
   const formatTimeDisplay = (seconds: number) => {
-    const { mins, secs } = formatTime(seconds);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+    const { mins, secs, ms } = formatTime(seconds);
+    return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
   };
 
   const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
@@ -378,41 +379,63 @@ export default function MarkerManager({
                           {formatTimeDisplay(startMarker.timestamp)}
                         </div>
                         {editingIndex === markers.findIndex(m => m.timestamp === startMarker.timestamp) && (
-                          <div className="flex items-center space-x-2 mt-2">
-                            <div className="flex space-x-1">
-                              <Input
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                defaultValue={formatTime(startMarker.timestamp).mins}
-                                className="w-12 h-6 text-xs text-center"
-                                data-testid={`input-start-minutes-${segmentIndex}`}
-                              />
-                              <span className="text-xs text-gray-500 self-center">:</span>
-                              <Input
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                max="59"
-                                defaultValue={formatTime(startMarker.timestamp).secs}
-                                className="w-12 h-6 text-xs text-center"
-                                data-testid={`input-start-seconds-${segmentIndex}`}
-                              />
+                          <div className="flex items-center space-x-3 mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Min</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  defaultValue={formatTime(startMarker.timestamp).mins}
+                                  className="w-16 h-9 text-sm text-center"
+                                  data-testid={`input-start-minutes-${segmentIndex}`}
+                                />
+                              </div>
+                              <span className="text-lg text-gray-500 mt-4">:</span>
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Sec</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  max="59"
+                                  defaultValue={formatTime(startMarker.timestamp).secs}
+                                  className="w-16 h-9 text-sm text-center"
+                                  data-testid={`input-start-seconds-${segmentIndex}`}
+                                />
+                              </div>
+                              <span className="text-lg text-gray-500 mt-4">.</span>
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Ms</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  max="999"
+                                  defaultValue={formatTime(startMarker.timestamp).ms}
+                                  className="w-20 h-9 text-sm text-center"
+                                  data-testid={`input-start-milliseconds-${segmentIndex}`}
+                                />
+                              </div>
                             </div>
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="default"
                               onClick={() => {
                                 const minutesInput = document.querySelector(`[data-testid="input-start-minutes-${segmentIndex}"]`) as HTMLInputElement;
                                 const secondsInput = document.querySelector(`[data-testid="input-start-seconds-${segmentIndex}"]`) as HTMLInputElement;
+                                const millisecondsInput = document.querySelector(`[data-testid="input-start-milliseconds-${segmentIndex}"]`) as HTMLInputElement;
                                 const mins = parseInt(minutesInput.value) || 0;
                                 const secs = parseInt(secondsInput.value) || 0;
+                                const ms = parseInt(millisecondsInput.value) || 0;
                                 const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
-                                updateMarkerTime(originalIndex, parseTime(mins, secs));
+                                updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
                               }}
-                              className="h-6 text-green-600 hover:text-green-700"
+                              className="h-9 bg-green-600 hover:bg-green-700 text-white"
                             >
-                              <Save className="h-3 w-3" />
+                              <Save className="h-4 w-4 mr-1" />
+                              Save
                             </Button>
                           </div>
                         )}
@@ -454,41 +477,63 @@ export default function MarkerManager({
                           {formatTimeDisplay(endMarker.timestamp)}
                         </div>
                         {editingIndex === markers.findIndex(m => m.timestamp === endMarker.timestamp) && (
-                          <div className="flex items-center space-x-2 mt-2">
-                            <div className="flex space-x-1">
-                              <Input
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                defaultValue={formatTime(endMarker.timestamp).mins}
-                                className="w-12 h-6 text-xs text-center"
-                                data-testid={`input-end-minutes-${segmentIndex}`}
-                              />
-                              <span className="text-xs text-gray-500 self-center">:</span>
-                              <Input
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                max="59"
-                                defaultValue={formatTime(endMarker.timestamp).secs}
-                                className="w-12 h-6 text-xs text-center"
-                                data-testid={`input-end-seconds-${segmentIndex}`}
-                              />
+                          <div className="flex items-center space-x-3 mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-2">
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Min</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  defaultValue={formatTime(endMarker.timestamp).mins}
+                                  className="w-16 h-9 text-sm text-center"
+                                  data-testid={`input-end-minutes-${segmentIndex}`}
+                                />
+                              </div>
+                              <span className="text-lg text-gray-500 mt-4">:</span>
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Sec</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  max="59"
+                                  defaultValue={formatTime(endMarker.timestamp).secs}
+                                  className="w-16 h-9 text-sm text-center"
+                                  data-testid={`input-end-seconds-${segmentIndex}`}
+                                />
+                              </div>
+                              <span className="text-lg text-gray-500 mt-4">.</span>
+                              <div className="flex flex-col items-center">
+                                <Label className="text-xs text-gray-500 mb-1">Ms</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="0"
+                                  min="0"
+                                  max="999"
+                                  defaultValue={formatTime(endMarker.timestamp).ms}
+                                  className="w-20 h-9 text-sm text-center"
+                                  data-testid={`input-end-milliseconds-${segmentIndex}`}
+                                />
+                              </div>
                             </div>
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="default"
                               onClick={() => {
                                 const minutesInput = document.querySelector(`[data-testid="input-end-minutes-${segmentIndex}"]`) as HTMLInputElement;
                                 const secondsInput = document.querySelector(`[data-testid="input-end-seconds-${segmentIndex}"]`) as HTMLInputElement;
+                                const millisecondsInput = document.querySelector(`[data-testid="input-end-milliseconds-${segmentIndex}"]`) as HTMLInputElement;
                                 const mins = parseInt(minutesInput.value) || 0;
                                 const secs = parseInt(secondsInput.value) || 0;
+                                const ms = parseInt(millisecondsInput.value) || 0;
                                 const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
-                                updateMarkerTime(originalIndex, parseTime(mins, secs));
+                                updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
                               }}
-                              className="h-6 text-red-600 hover:text-red-700"
+                              className="h-9 bg-red-600 hover:bg-red-700 text-white"
                             >
-                              <Save className="h-3 w-3" />
+                              <Save className="h-4 w-4 mr-1" />
+                              Save
                             </Button>
                           </div>
                         )}
