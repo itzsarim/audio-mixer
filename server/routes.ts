@@ -3,27 +3,23 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import fsSync from "fs";
 import ffmpeg from "fluent-ffmpeg";
 import { storage } from "./storage";
 import { insertAudioFileSchema, processAudioSchema, previewAudioSchema } from "@shared/schema";
 import { z } from "zod";
 
-// Setup multer for file uploads
+// Setup multer for file uploads (memory storage)
 const upload = multer({
-  dest: "uploads/",
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 100 * 1024 * 1024, // 100MB limit
   },
-  fileFilter: (req, file, cb) => {
-    // Check file extension as primary filter
+  fileFilter: (_req, file, cb) => {
     const fileExtension = path.extname(file.originalname).toLowerCase();
     const allowedExtensions = [".mp3", ".wav"];
-    
-    if (allowedExtensions.includes(fileExtension)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only MP3 and WAV files are allowed"));
-    }
+    if (allowedExtensions.includes(fileExtension)) cb(null, true);
+    else cb(new Error("Only MP3 and WAV files are allowed"));
   },
 });
 
@@ -35,13 +31,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No audio file provided" });
       }
 
-      // Get audio metadata using ffprobe
+      // Get audio metadata using ffprobe from memory by writing to temp file (only for probe)
+      // Create a temp file, write buffer, probe, then delete temp file
+      const tmpDir = path.join(process.cwd(), "tmp");
+      await fs.mkdir(tmpDir, { recursive: true });
+      const tmpPath = path.join(tmpDir, `${Date.now()}-${req.file.originalname}`);
+      await fs.writeFile(tmpPath, req.file.buffer);
       const duration = await new Promise<number>((resolve, reject) => {
-        ffmpeg.ffprobe(req.file!.path, (err, metadata) => {
+        ffmpeg.ffprobe(tmpPath, (err, metadata) => {
           if (err) reject(err);
           else resolve(metadata.format.duration || 0);
         });
       });
+      await fs.rm(tmpPath, { force: true });
 
       // Validate duration (max 60 minutes)
       if (duration > 3600) {
@@ -50,11 +52,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const audioFile = await storage.createAudioFile({
-        filename: req.file.filename,
+        filename: req.file.originalname,
         originalName: req.file.originalname,
         duration,
         format: path.extname(req.file.originalname).toLowerCase(),
       });
+
+      // store bytes in memory keyed by audio file id
+      (storage as any).setAudioBytes(audioFile.id, Buffer.from(req.file.buffer));
 
       res.json(audioFile);
     } catch (error) {
@@ -84,9 +89,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!audioFile) {
         return res.status(404).json({ message: "Audio file not found" });
       }
-
-      const filePath = path.join("uploads", audioFile.filename);
-      res.sendFile(path.resolve(filePath));
+      const data: Buffer | undefined = (storage as any).getAudioBytes(audioFile.id);
+      if (!data) return res.status(404).json({ message: "Audio bytes not found" });
+      res.setHeader("Content-Type", audioFile.format === ".wav" ? "audio/wav" : "audio/mpeg");
+      res.setHeader("Content-Length", data.length.toString());
+      res.send(data);
     } catch (error) {
       console.error("Serve audio error:", error);
       res.status(500).json({ message: "Failed to serve audio file" });
@@ -146,9 +153,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Some markers exceed audio duration" });
       }
 
-      // Generate preview file
-      const previewPath = await generatePreview(audioFile, markers, crossfadeDuration);
-      res.sendFile(path.resolve(previewPath));
+      // Generate preview buffer from in-memory input
+      const inputBuffer: Buffer | undefined = (storage as any).getAudioBytes(audioFileId);
+      if (!inputBuffer) return res.status(404).json({ message: "Audio bytes not found" });
+      const outputBuffer = await generatePreviewBuffer(inputBuffer, markers, crossfadeDuration);
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", outputBuffer.length.toString());
+      res.send(outputBuffer);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: error.errors[0].message });
@@ -184,8 +195,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         outputFilename: null,
       });
 
-      // Start processing asynchronously
-      processAudioAsync(job.id, audioFile, markers, outputMode, crossfadeDuration || 1.0);
+      // Start processing asynchronously using in-memory buffers
+      processAudioAsyncToMemory(job.id, audioFileId, markers, outputMode, crossfadeDuration || 1.0);
 
       res.json({ jobId: job.id });
     } catch (error) {
@@ -215,12 +226,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/jobs/:id/download", async (req, res) => {
     try {
       const job = await storage.getProcessingJob(req.params.id);
-      if (!job || job.status !== "completed" || !job.outputFilename) {
+      if (!job || job.status !== "completed") {
         return res.status(404).json({ message: "Processed file not found" });
       }
-
-      const filePath = path.join("outputs", job.outputFilename);
-      res.download(filePath, `mixed-audio-${job.id}.mp3`);
+      const data: Buffer | undefined = (storage as any).getJobOutput(job.id);
+      if (!data) return res.status(404).json({ message: "Output not found" });
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Disposition", `attachment; filename="mixed-audio-${job.id}.mp3"`);
+      res.setHeader("Content-Length", data.length.toString());
+      res.send(data);
+      // Optionally delete output after send
+      (storage as any).deleteJobOutput(job.id);
     } catch (error) {
       console.error("Download error:", error);
       res.status(500).json({ message: "Failed to download file" });
@@ -231,49 +247,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-async function generatePreview(
-  audioFile: any,
+async function generatePreviewBuffer(
+  inputBuffer: Buffer,
   markers: Array<{ timestamp: number; order: number }>,
   crossfadeDuration: number
-): Promise<string> {
-  const inputPath = path.join("uploads", audioFile.filename);
-  const outputDir = "previews";
-  const outputFilename = `preview-${Date.now()}.mp3`;
-  const outputPath = path.join(outputDir, outputFilename);
-
-  // Ensure output directory exists
-  await fs.mkdir(outputDir, { recursive: true });
-
-  // Convert markers to segments (pairs of consecutive markers)
+): Promise<Buffer> {
   const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
-  
-  // Validate even number of markers
   if (sortedMarkers.length % 2 !== 0) {
     throw new Error("Even number of markers required. Each pair creates one segment.");
   }
-  
   const segments: Array<{ startTime: number; endTime: number }> = [];
-  
-  // Create segments from pairs (0&1, 2&3, 4&5, etc.)
   for (let i = 0; i < sortedMarkers.length; i += 2) {
     const startMarker = sortedMarkers[i];
     const endMarker = sortedMarkers[i + 1];
-    
     if (startMarker && endMarker && startMarker.timestamp < endMarker.timestamp) {
-      segments.push({
-        startTime: startMarker.timestamp,
-        endTime: endMarker.timestamp,
-      });
+      segments.push({ startTime: startMarker.timestamp, endTime: endMarker.timestamp });
     }
   }
-
-  await processSegments(inputPath, outputPath, segments, "crossfade", crossfadeDuration);
-  return outputPath;
+  return await processSegmentsToBuffer(inputBuffer, segments, "crossfade", crossfadeDuration);
 }
 
-async function processAudioAsync(
+async function processAudioAsyncToMemory(
   jobId: string,
-  audioFile: any,
+  audioFileId: string,
   markers: Array<{ timestamp: number; order: number }>,
   outputMode: string,
   crossfadeDuration: number
@@ -281,15 +277,9 @@ async function processAudioAsync(
   try {
     await storage.updateProcessingJobStatus(jobId, "processing");
 
-    const inputPath = path.join("uploads", audioFile.filename);
-    const outputDir = "outputs";
-    const outputFilename = `processed-${jobId}.mp3`;
-    const outputPath = path.join(outputDir, outputFilename);
+    const inputBuffer: Buffer | undefined = (storage as any).getAudioBytes(audioFileId);
+    if (!inputBuffer) throw new Error("Audio bytes not found");
 
-    // Ensure output directory exists
-    await fs.mkdir(outputDir, { recursive: true });
-
-    // Convert markers to segments (pairs of consecutive markers)
     const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
     
     // Validate even number of markers
@@ -312,45 +302,55 @@ async function processAudioAsync(
       }
     }
 
-    await processSegments(inputPath, outputPath, segments, outputMode, crossfadeDuration);
-    await storage.updateProcessingJobStatus(jobId, "completed", outputFilename);
+    const outputBuffer = await processSegmentsToBuffer(inputBuffer, segments, outputMode, crossfadeDuration);
+    (storage as any).setJobOutput(jobId, outputBuffer);
+    await storage.updateProcessingJobStatus(jobId, "completed");
+    // delete input bytes to free memory
+    (storage as any).deleteAudioBytes(audioFileId);
   } catch (error) {
     console.error("Processing error:", error);
     await storage.updateProcessingJobStatus(jobId, "failed");
   }
 }
 
-async function processSegments(
-  inputPath: string,
-  outputPath: string,
+async function processSegmentsToBuffer(
+  inputBuffer: Buffer,
   segments: Array<{ startTime: number; endTime: number }>,
   outputMode: string,
   crossfadeDuration: number
-) {
-  if (segments.length === 1) {
-    // Single segment - simple cut
-    const segment = segments[0];
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg(inputPath)
-        .setStartTime(segment.startTime)
-        .setDuration(segment.endTime - segment.startTime)
-        .output(outputPath)
-        .on("end", () => resolve())
-        .on("error", (err) => reject(err))
-        .run();
-    });
-  } else {
-    // Multiple segments - need to cut and concatenate
-    const tempDir = `temp-${Date.now()}`;
-    await fs.mkdir(tempDir, { recursive: true });
+): Promise<Buffer> {
+  // Write input buffer to temp file because ffmpeg CLI operates on files
+  const tempRoot = path.join(process.cwd(), "tmp");
+  await fs.mkdir(tempRoot, { recursive: true });
+  const inputPath = path.join(tempRoot, `in-${Date.now()}-${Math.random()}.mp3`);
+  await fs.writeFile(inputPath, inputBuffer);
 
-    try {
-      // Cut individual segments
+  const cleanupPaths: string[] = [inputPath];
+  try {
+    if (segments.length === 1) {
+      const segment = segments[0];
+      const outPath = path.join(tempRoot, `out-${Date.now()}-${Math.random()}.mp3`);
+      cleanupPaths.push(outPath);
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(segment.startTime)
+          .setDuration(segment.endTime - segment.startTime)
+          .output(outPath)
+          .on("end", () => resolve())
+          .on("error", (err) => reject(err))
+          .run();
+      });
+      const data = await fs.readFile(outPath);
+      return data;
+    } else {
+      const tempDir = path.join(tempRoot, `segments-${Date.now()}-${Math.random()}`);
+      await fs.mkdir(tempDir, { recursive: true });
+      cleanupPaths.push(tempDir);
       const segmentFiles: string[] = [];
       for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
         const segmentPath = path.join(tempDir, `segment-${i}.mp3`);
-        
+        segmentFiles.push(segmentPath);
         await new Promise<void>((resolve, reject) => {
           ffmpeg(inputPath)
             .setStartTime(segment.startTime)
@@ -360,55 +360,55 @@ async function processSegments(
             .on("error", (err) => reject(err))
             .run();
         });
-        
-        segmentFiles.push(segmentPath);
       }
 
-      // Concatenate segments
+      const outPath = path.join(tempRoot, `out-${Date.now()}-${Math.random()}.mp3`);
+      cleanupPaths.push(outPath);
       if (outputMode === "direct") {
-        // Direct concatenation
         const command = ffmpeg();
         segmentFiles.forEach(file => command.input(file));
-        
         await new Promise<void>((resolve, reject) => {
           command
             .complexFilter([
               segmentFiles.map((_, i) => `[${i}:a]`).join("") + `concat=n=${segmentFiles.length}:v=0:a=1[out]`
             ])
             .outputOptions(["-map", "[out]"])
-            .output(outputPath)
+            .output(outPath)
             .on("end", () => resolve())
             .on("error", (err) => reject(err))
             .run();
         });
       } else {
-        // Crossfade concatenation
         const command = ffmpeg();
         segmentFiles.forEach(file => command.input(file));
-        
-        // Build crossfade filter chain
         let filterChain = "";
         for (let i = 0; i < segmentFiles.length - 1; i++) {
-          if (i === 0) {
-            filterChain = `[0:a][1:a]acrossfade=d=${crossfadeDuration}[a01];`;
-          } else {
-            filterChain += `[a0${i}][${i + 1}:a]acrossfade=d=${crossfadeDuration}[a0${i + 1}];`;
-          }
+          if (i === 0) filterChain = `[0:a][1:a]acrossfade=d=${crossfadeDuration}[a01];`;
+          else filterChain += `[a0${i}][${i + 1}:a]acrossfade=d=${crossfadeDuration}[a0${i + 1}];`;
         }
-        
         await new Promise<void>((resolve, reject) => {
           command
-            .complexFilter(filterChain.slice(0, -1)) // Remove last semicolon
+            .complexFilter(filterChain.slice(0, -1))
             .outputOptions(["-map", `[a0${segmentFiles.length - 1}]`])
-            .output(outputPath)
+            .output(outPath)
             .on("end", () => resolve())
             .on("error", (err) => reject(err))
             .run();
         });
       }
-    } finally {
-      // Clean up temp files
-      await fs.rm(tempDir, { recursive: true, force: true });
+      const data = await fs.readFile(outPath);
+      return data;
+    }
+  } finally {
+    // Cleanup temp files/dirs best-effort
+    for (const p of cleanupPaths) {
+      try {
+        if (p && (await fs.stat(p).then(() => true).catch(() => false))) {
+          const stat = await fs.stat(p).catch(() => undefined);
+          if (stat && stat.isDirectory()) await fs.rm(p, { recursive: true, force: true });
+          else await fs.rm(p, { force: true });
+        }
+      } catch {}
     }
   }
 }

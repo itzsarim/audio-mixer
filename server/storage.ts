@@ -21,11 +21,15 @@ export class MemStorage implements IStorage {
   private audioFiles: Map<string, AudioFile>;
   private processingJobs: Map<string, ProcessingJob>;
   private markers: Map<string, Marker[]>; // audioFileId -> markers
+  private audioFileData: Map<string, Buffer>; // audioFileId -> raw bytes
+  private jobOutputs: Map<string, Buffer>; // jobId -> output bytes
 
   constructor() {
     this.audioFiles = new Map();
     this.processingJobs = new Map();
     this.markers = new Map();
+    this.audioFileData = new Map();
+    this.jobOutputs = new Map();
   }
 
   async createAudioFile(insertAudioFile: InsertAudioFile): Promise<AudioFile> {
@@ -100,6 +104,31 @@ export class MemStorage implements IStorage {
     };
     this.processingJobs.set(id, updatedJob);
     return updatedJob;
+  }
+
+  // In-memory bytes management
+  setAudioBytes(audioFileId: string, data: Buffer) {
+    this.audioFileData.set(audioFileId, data);
+  }
+
+  getAudioBytes(audioFileId: string): Buffer | undefined {
+    return this.audioFileData.get(audioFileId);
+  }
+
+  deleteAudioBytes(audioFileId: string) {
+    this.audioFileData.delete(audioFileId);
+  }
+
+  setJobOutput(jobId: string, data: Buffer) {
+    this.jobOutputs.set(jobId, data);
+  }
+
+  getJobOutput(jobId: string): Buffer | undefined {
+    return this.jobOutputs.get(jobId);
+  }
+
+  deleteJobOutput(jobId: string) {
+    this.jobOutputs.delete(jobId);
   }
 }
 
