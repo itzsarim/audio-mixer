@@ -54,11 +54,24 @@ export const markerSchema = z.object({
 export const markerListSchema = z.array(markerSchema)
   .min(2, "At least two markers are required")
   .refine(markers => {
-    // Check markers are in ascending order by timestamp
-    const sorted = [...markers].sort((a, b) => a.timestamp - b.timestamp);
-    return markers.every((marker, index) => marker.timestamp === sorted[index].timestamp);
+    // Check even number of markers
+    return markers.length % 2 === 0;
   }, {
-    message: "Markers must be in ascending order by timestamp",
+    message: "Even number of markers required - each pair creates one segment",
+  })
+  .refine(markers => {
+    // Check that pairs are valid (start < end for each pair)
+    const sorted = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+    for (let i = 0; i < sorted.length; i += 2) {
+      const start = sorted[i];
+      const end = sorted[i + 1];
+      if (!start || !end || start.timestamp >= end.timestamp) {
+        return false;
+      }
+    }
+    return true;
+  }, {
+    message: "Each pair of markers must have start time less than end time",
   });
 
 export const processAudioSchema = z.object({

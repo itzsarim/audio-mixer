@@ -51,6 +51,8 @@ export default function MarkerManager({
   };
 
   const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+  const isEvenMarkers = sortedMarkers.length % 2 === 0;
+  const segmentCount = Math.floor(sortedMarkers.length / 2);
 
   const removeMarker = (index: number) => {
     const newMarkers = markers.filter((_, i) => i !== index);
@@ -80,10 +82,12 @@ export default function MarkerManager({
   };
 
   const handleGenerateAudio = async () => {
-    if (sortedMarkers.length < 2) {
+    if (!isEvenMarkers || segmentCount < 1) {
       toast({
-        title: "Need more markers",
-        description: "At least 2 markers are required to generate audio",
+        title: "Invalid markers",
+        description: !isEvenMarkers 
+          ? "You need an even number of markers. Add an end marker for the last segment."
+          : "At least one complete segment (2 markers) is required.",
         variant: "destructive",
       });
       return;
@@ -143,10 +147,12 @@ export default function MarkerManager({
   };
 
   const handlePreviewMix = async () => {
-    if (sortedMarkers.length < 2) {
+    if (!isEvenMarkers || segmentCount < 1) {
       toast({
-        title: "Need more markers",
-        description: "At least 2 markers are required to create a preview",
+        title: "Invalid markers",
+        description: !isEvenMarkers 
+          ? "You need an even number of markers. Add an end marker for the last segment."
+          : "At least one complete segment (2 markers) is required.",
         variant: "destructive",
       });
       return;
@@ -221,8 +227,10 @@ export default function MarkerManager({
             <h2 className="text-xl font-semibold text-gray-900">Audio Markers</h2>
             <p className="text-sm text-gray-600 mt-1">
               {markers.length === 0 
-                ? "Add markers to create segments for your mix"
-                : `${markers.length} markers • ${Math.max(0, markers.length - 1)} segments`
+                ? "Add markers in pairs - each pair creates one segment"
+                : isEvenMarkers 
+                  ? `${markers.length} markers • ${segmentCount} segments ready`
+                  : `${markers.length} markers • Missing end marker for segment ${segmentCount + 1}`
               }
             </p>
           </div>
@@ -245,97 +253,223 @@ export default function MarkerManager({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Markers List */}
-            <div className="space-y-3">
-              {sortedMarkers.map((marker, index) => {
-                const originalIndex = markers.findIndex(m => m.timestamp === marker.timestamp && m.order === marker.order);
-                const isEditing = editingIndex === originalIndex;
+            {/* Error for odd markers */}
+            {!isEvenMarkers && markers.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center">
+                    <span className="text-xs text-white font-bold">!</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-yellow-800">
+                      Missing end marker for segment {segmentCount + 1}
+                    </p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Add one more marker to complete the segment, or remove the last marker.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Segments List (grouped by pairs) */}
+            <div className="space-y-4">
+              {Array.from({ length: segmentCount }, (_, segmentIndex) => {
+                const startMarkerIndex = segmentIndex * 2;
+                const endMarkerIndex = segmentIndex * 2 + 1;
+                const startMarker = sortedMarkers[startMarkerIndex];
+                const endMarker = sortedMarkers[endMarkerIndex];
+                const duration = endMarker.timestamp - startMarker.timestamp;
                 
                 return (
-                  <div key={originalIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between">
+                  <div key={segmentIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                          {index + 1}
+                        <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                          {segmentIndex + 1}
                         </div>
                         <div>
-                          <span className="font-medium text-gray-900">Marker {index + 1}</span>
-                          {isEditing ? (
-                            <div className="flex items-center space-x-2 mt-1">
-                              <div className="flex space-x-1">
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  defaultValue={formatTime(marker.timestamp).mins}
-                                  className="w-16 h-8 text-xs text-center"
-                                  data-testid={`input-marker-minutes-${index}`}
-                                />
-                                <span className="text-xs text-gray-500 self-center">:</span>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  max="59"
-                                  defaultValue={formatTime(marker.timestamp).secs}
-                                  className="w-16 h-8 text-xs text-center"
-                                  data-testid={`input-marker-seconds-${index}`}
-                                />
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  const minutesInput = document.querySelector(`[data-testid="input-marker-minutes-${index}"]`) as HTMLInputElement;
-                                  const secondsInput = document.querySelector(`[data-testid="input-marker-seconds-${index}"]`) as HTMLInputElement;
-                                  const mins = parseInt(minutesInput.value) || 0;
-                                  const secs = parseInt(secondsInput.value) || 0;
-                                  updateMarkerTime(originalIndex, parseTime(mins, secs));
-                                }}
-                                className="h-8 text-green-600 hover:text-green-700"
-                              >
-                                <Save className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setEditingIndex(null)}
-                                className="h-8 text-gray-400 hover:text-gray-600"
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="text-sm text-gray-600 mt-1">
-                              {formatTimeDisplay(marker.timestamp)}
-                            </div>
-                          )}
+                          <span className="font-medium text-gray-900">Segment {segmentIndex + 1}</span>
+                          <div className="text-sm text-gray-600 mt-1">
+                            Duration: {formatTimeDisplay(duration)}
+                          </div>
                         </div>
                       </div>
-                      {!isEditing && (
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingIndex(originalIndex)}
-                            className="text-gray-400 hover:text-blue-500"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeMarker(originalIndex)}
-                            className="text-gray-400 hover:text-red-500"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Start Marker */}
+                      <div className="border border-green-200 rounded-lg p-3 bg-green-50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+                            <span className="text-sm font-medium text-green-800">Start</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                setEditingIndex(originalIndex);
+                              }}
+                              className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                removeMarker(originalIndex);
+                              }}
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
-                      )}
+                        <div className="text-sm font-mono text-green-700 mt-1">
+                          {formatTimeDisplay(startMarker.timestamp)}
+                        </div>
+                        {editingIndex === markers.findIndex(m => m.timestamp === startMarker.timestamp) && (
+                          <div className="flex items-center space-x-2 mt-2">
+                            <div className="flex space-x-1">
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                defaultValue={formatTime(startMarker.timestamp).mins}
+                                className="w-12 h-6 text-xs text-center"
+                                data-testid={`input-start-minutes-${segmentIndex}`}
+                              />
+                              <span className="text-xs text-gray-500 self-center">:</span>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="59"
+                                defaultValue={formatTime(startMarker.timestamp).secs}
+                                className="w-12 h-6 text-xs text-center"
+                                data-testid={`input-start-seconds-${segmentIndex}`}
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const minutesInput = document.querySelector(`[data-testid="input-start-minutes-${segmentIndex}"]`) as HTMLInputElement;
+                                const secondsInput = document.querySelector(`[data-testid="input-start-seconds-${segmentIndex}"]`) as HTMLInputElement;
+                                const mins = parseInt(minutesInput.value) || 0;
+                                const secs = parseInt(secondsInput.value) || 0;
+                                const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                updateMarkerTime(originalIndex, parseTime(mins, secs));
+                              }}
+                              className="h-6 text-green-600 hover:text-green-700"
+                            >
+                              <Save className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* End Marker */}
+                      <div className="border border-red-200 rounded-lg p-3 bg-red-50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-4 h-4 bg-red-500 rounded-full"></div>
+                            <span className="text-sm font-medium text-red-800">End</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                setEditingIndex(originalIndex);
+                              }}
+                              className="h-6 w-6 p-0 text-red-600 hover:text-red-700"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                removeMarker(originalIndex);
+                              }}
+                              className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="text-sm font-mono text-red-700 mt-1">
+                          {formatTimeDisplay(endMarker.timestamp)}
+                        </div>
+                        {editingIndex === markers.findIndex(m => m.timestamp === endMarker.timestamp) && (
+                          <div className="flex items-center space-x-2 mt-2">
+                            <div className="flex space-x-1">
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                defaultValue={formatTime(endMarker.timestamp).mins}
+                                className="w-12 h-6 text-xs text-center"
+                                data-testid={`input-end-minutes-${segmentIndex}`}
+                              />
+                              <span className="text-xs text-gray-500 self-center">:</span>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="59"
+                                defaultValue={formatTime(endMarker.timestamp).secs}
+                                className="w-12 h-6 text-xs text-center"
+                                data-testid={`input-end-seconds-${segmentIndex}`}
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const minutesInput = document.querySelector(`[data-testid="input-end-minutes-${segmentIndex}"]`) as HTMLInputElement;
+                                const secondsInput = document.querySelector(`[data-testid="input-end-seconds-${segmentIndex}"]`) as HTMLInputElement;
+                                const mins = parseInt(minutesInput.value) || 0;
+                                const secs = parseInt(secondsInput.value) || 0;
+                                const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                updateMarkerTime(originalIndex, parseTime(mins, secs));
+                              }}
+                              className="h-6 text-red-600 hover:text-red-700"
+                            >
+                              <Save className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
+              
+              {/* Show unpaired last marker if odd */}
+              {!isEvenMarkers && markers.length > 0 && (
+                <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-yellow-500 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                      ?
+                    </div>
+                    <div>
+                      <span className="font-medium text-yellow-800">Unpaired Start Marker</span>
+                      <div className="text-sm text-yellow-700 mt-1">
+                        {formatTimeDisplay(sortedMarkers[sortedMarkers.length - 1].timestamp)} - Needs end marker
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -351,7 +485,7 @@ export default function MarkerManager({
                   <span>Add More Markers</span>
                 </Button>
                 
-                {sortedMarkers.length >= 2 && (
+                {isEvenMarkers && segmentCount >= 1 && (
                   <Button 
                     onClick={handlePreviewMix}
                     variant="outline"
@@ -365,7 +499,7 @@ export default function MarkerManager({
                 )}
               </div>
 
-              {sortedMarkers.length >= 2 && (
+              {isEvenMarkers && segmentCount >= 1 && (
                 <>
                   {!generatedJobId ? (
                     <Button 

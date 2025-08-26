@@ -246,13 +246,25 @@ async function generatePreview(
 
   // Convert markers to segments (pairs of consecutive markers)
   const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+  
+  // Validate even number of markers
+  if (sortedMarkers.length % 2 !== 0) {
+    throw new Error("Even number of markers required. Each pair creates one segment.");
+  }
+  
   const segments: Array<{ startTime: number; endTime: number }> = [];
   
-  for (let i = 0; i < sortedMarkers.length - 1; i++) {
-    segments.push({
-      startTime: sortedMarkers[i].timestamp,
-      endTime: sortedMarkers[i + 1].timestamp,
-    });
+  // Create segments from pairs (0&1, 2&3, 4&5, etc.)
+  for (let i = 0; i < sortedMarkers.length; i += 2) {
+    const startMarker = sortedMarkers[i];
+    const endMarker = sortedMarkers[i + 1];
+    
+    if (startMarker && endMarker && startMarker.timestamp < endMarker.timestamp) {
+      segments.push({
+        startTime: startMarker.timestamp,
+        endTime: endMarker.timestamp,
+      });
+    }
   }
 
   await processSegments(inputPath, outputPath, segments, "crossfade", crossfadeDuration);
@@ -279,13 +291,25 @@ async function processAudioAsync(
 
     // Convert markers to segments (pairs of consecutive markers)
     const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Validate even number of markers
+    if (sortedMarkers.length % 2 !== 0) {
+      throw new Error("Even number of markers required. Each pair creates one segment.");
+    }
+    
     const segments: Array<{ startTime: number; endTime: number }> = [];
     
-    for (let i = 0; i < sortedMarkers.length - 1; i++) {
-      segments.push({
-        startTime: sortedMarkers[i].timestamp,
-        endTime: sortedMarkers[i + 1].timestamp,
-      });
+    // Create segments from pairs (0&1, 2&3, 4&5, etc.)
+    for (let i = 0; i < sortedMarkers.length; i += 2) {
+      const startMarker = sortedMarkers[i];
+      const endMarker = sortedMarkers[i + 1];
+      
+      if (startMarker && endMarker && startMarker.timestamp < endMarker.timestamp) {
+        segments.push({
+          startTime: startMarker.timestamp,
+          endTime: endMarker.timestamp,
+        });
+      }
     }
 
     await processSegments(inputPath, outputPath, segments, outputMode, crossfadeDuration);
