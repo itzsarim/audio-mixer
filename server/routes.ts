@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs/promises";
 import ffmpeg from "fluent-ffmpeg";
 import { storage } from "./storage";
-import { insertAudioFileSchema, processAudioSchema } from "@shared/schema";
+import { insertAudioFileSchema, processAudioSchema, previewAudioSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Setup multer for file uploads
@@ -93,21 +93,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process audio (cut and mix)
-  app.post("/api/process", async (req, res) => {
+  // Save markers for audio file
+  app.post("/api/audio/:id/markers", async (req, res) => {
     try {
-      const validatedData = processAudioSchema.parse(req.body);
-      const { audioFileId, segments, outputMode, crossfadeDuration } = validatedData;
+      const audioFileId = req.params.id;
+      const { markers } = req.body;
+      
+      const audioFile = await storage.getAudioFile(audioFileId);
+      if (!audioFile) {
+        return res.status(404).json({ message: "Audio file not found" });
+      }
+
+      // Validate markers are within audio duration
+      const invalidMarkers = markers.filter((m: any) => m.timestamp > audioFile.duration);
+      if (invalidMarkers.length > 0) {
+        return res.status(400).json({ message: "Some markers exceed audio duration" });
+      }
+
+      const savedMarkers = await storage.updateMarkers(audioFileId, markers);
+      res.json(savedMarkers);
+    } catch (error) {
+      console.error("Save markers error:", error);
+      res.status(500).json({ message: "Failed to save markers" });
+    }
+  });
+
+  // Get markers for audio file
+  app.get("/api/audio/:id/markers", async (req, res) => {
+    try {
+      const markers = await storage.getMarkers(req.params.id);
+      res.json(markers);
+    } catch (error) {
+      console.error("Get markers error:", error);
+      res.status(500).json({ message: "Failed to get markers" });
+    }
+  });
+
+  // Preview audio with crossfade
+  app.post("/api/preview", async (req, res) => {
+    try {
+      const validatedData = previewAudioSchema.parse(req.body);
+      const { audioFileId, markers, crossfadeDuration } = validatedData;
 
       const audioFile = await storage.getAudioFile(audioFileId);
       if (!audioFile) {
         return res.status(404).json({ message: "Audio file not found" });
       }
 
-      // Validate segments are within audio duration
-      const maxTime = Math.max(...segments.map(s => s.endTime));
+      // Validate markers are within audio duration
+      const maxTime = Math.max(...markers.map(m => m.timestamp));
       if (maxTime > audioFile.duration) {
-        return res.status(400).json({ message: "Segment end time exceeds audio duration" });
+        return res.status(400).json({ message: "Some markers exceed audio duration" });
+      }
+
+      // Generate preview file
+      const previewPath = await generatePreview(audioFile, markers, crossfadeDuration);
+      res.sendFile(path.resolve(previewPath));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      console.error("Preview audio error:", error);
+      res.status(500).json({ message: "Failed to generate preview" });
+    }
+  });
+
+  // Process audio (cut and mix)
+  app.post("/api/process", async (req, res) => {
+    try {
+      const validatedData = processAudioSchema.parse(req.body);
+      const { audioFileId, markers, outputMode, crossfadeDuration } = validatedData;
+
+      const audioFile = await storage.getAudioFile(audioFileId);
+      if (!audioFile) {
+        return res.status(404).json({ message: "Audio file not found" });
+      }
+
+      // Validate markers are within audio duration
+      const maxTime = Math.max(...markers.map(m => m.timestamp));
+      if (maxTime > audioFile.duration) {
+        return res.status(400).json({ message: "Some markers exceed audio duration" });
       }
 
       // Create processing job
@@ -120,7 +185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Start processing asynchronously
-      processAudioAsync(job.id, audioFile, segments, outputMode, crossfadeDuration || 1.0);
+      processAudioAsync(job.id, audioFile, markers, outputMode, crossfadeDuration || 1.0);
 
       res.json({ jobId: job.id });
     } catch (error) {
@@ -166,10 +231,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
+async function generatePreview(
+  audioFile: any,
+  markers: Array<{ timestamp: number; order: number }>,
+  crossfadeDuration: number
+): Promise<string> {
+  const inputPath = path.join("uploads", audioFile.filename);
+  const outputDir = "previews";
+  const outputFilename = `preview-${Date.now()}.mp3`;
+  const outputPath = path.join(outputDir, outputFilename);
+
+  // Ensure output directory exists
+  await fs.mkdir(outputDir, { recursive: true });
+
+  // Convert markers to segments (pairs of consecutive markers)
+  const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+  const segments: Array<{ startTime: number; endTime: number }> = [];
+  
+  for (let i = 0; i < sortedMarkers.length - 1; i++) {
+    segments.push({
+      startTime: sortedMarkers[i].timestamp,
+      endTime: sortedMarkers[i + 1].timestamp,
+    });
+  }
+
+  await processSegments(inputPath, outputPath, segments, "crossfade", crossfadeDuration);
+  return outputPath;
+}
+
 async function processAudioAsync(
   jobId: string,
   audioFile: any,
-  segments: Array<{ startTime: number; endTime: number }>,
+  markers: Array<{ timestamp: number; order: number }>,
   outputMode: string,
   crossfadeDuration: number
 ) {
@@ -184,94 +277,114 @@ async function processAudioAsync(
     // Ensure output directory exists
     await fs.mkdir(outputDir, { recursive: true });
 
-    if (segments.length === 1) {
-      // Single segment - simple cut
-      const segment = segments[0];
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg(inputPath)
-          .setStartTime(segment.startTime)
-          .setDuration(segment.endTime - segment.startTime)
-          .output(outputPath)
-          .on("end", resolve)
-          .on("error", reject)
-          .run();
+    // Convert markers to segments (pairs of consecutive markers)
+    const sortedMarkers = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+    const segments: Array<{ startTime: number; endTime: number }> = [];
+    
+    for (let i = 0; i < sortedMarkers.length - 1; i++) {
+      segments.push({
+        startTime: sortedMarkers[i].timestamp,
+        endTime: sortedMarkers[i + 1].timestamp,
       });
-    } else {
-      // Multiple segments - need to cut and concatenate
-      const tempDir = `temp-${jobId}`;
-      await fs.mkdir(tempDir, { recursive: true });
-
-      try {
-        // Cut individual segments
-        const segmentFiles: string[] = [];
-        for (let i = 0; i < segments.length; i++) {
-          const segment = segments[i];
-          const segmentPath = path.join(tempDir, `segment-${i}.mp3`);
-          
-          await new Promise<void>((resolve, reject) => {
-            ffmpeg(inputPath)
-              .setStartTime(segment.startTime)
-              .setDuration(segment.endTime - segment.startTime)
-              .output(segmentPath)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
-          });
-          
-          segmentFiles.push(segmentPath);
-        }
-
-        // Concatenate segments
-        if (outputMode === "direct") {
-          // Direct concatenation
-          const command = ffmpeg();
-          segmentFiles.forEach(file => command.input(file));
-          
-          await new Promise<void>((resolve, reject) => {
-            command
-              .complexFilter([
-                segmentFiles.map((_, i) => `[${i}:a]`).join("") + `concat=n=${segmentFiles.length}:v=0:a=1[out]`
-              ])
-              .outputOptions(["-map", "[out]"])
-              .output(outputPath)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
-          });
-        } else {
-          // Crossfade concatenation
-          const command = ffmpeg();
-          segmentFiles.forEach(file => command.input(file));
-          
-          // Build crossfade filter chain
-          let filterChain = "";
-          for (let i = 0; i < segmentFiles.length - 1; i++) {
-            if (i === 0) {
-              filterChain = `[0:a][1:a]acrossfade=d=${crossfadeDuration}[a01];`;
-            } else {
-              filterChain += `[a0${i}][${i + 1}:a]acrossfade=d=${crossfadeDuration}[a0${i + 1}];`;
-            }
-          }
-          
-          await new Promise<void>((resolve, reject) => {
-            command
-              .complexFilter(filterChain.slice(0, -1)) // Remove last semicolon
-              .outputOptions(["-map", `[a0${segmentFiles.length - 1}]`])
-              .output(outputPath)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
-          });
-        }
-      } finally {
-        // Clean up temp files
-        await fs.rm(tempDir, { recursive: true, force: true });
-      }
     }
 
+    await processSegments(inputPath, outputPath, segments, outputMode, crossfadeDuration);
     await storage.updateProcessingJobStatus(jobId, "completed", outputFilename);
   } catch (error) {
     console.error("Processing error:", error);
     await storage.updateProcessingJobStatus(jobId, "failed");
+  }
+}
+
+async function processSegments(
+  inputPath: string,
+  outputPath: string,
+  segments: Array<{ startTime: number; endTime: number }>,
+  outputMode: string,
+  crossfadeDuration: number
+) {
+  if (segments.length === 1) {
+    // Single segment - simple cut
+    const segment = segments[0];
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .setStartTime(segment.startTime)
+        .setDuration(segment.endTime - segment.startTime)
+        .output(outputPath)
+        .on("end", () => resolve())
+        .on("error", (err) => reject(err))
+        .run();
+    });
+  } else {
+    // Multiple segments - need to cut and concatenate
+    const tempDir = `temp-${Date.now()}`;
+    await fs.mkdir(tempDir, { recursive: true });
+
+    try {
+      // Cut individual segments
+      const segmentFiles: string[] = [];
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const segmentPath = path.join(tempDir, `segment-${i}.mp3`);
+        
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(inputPath)
+            .setStartTime(segment.startTime)
+            .setDuration(segment.endTime - segment.startTime)
+            .output(segmentPath)
+            .on("end", () => resolve())
+            .on("error", (err) => reject(err))
+            .run();
+        });
+        
+        segmentFiles.push(segmentPath);
+      }
+
+      // Concatenate segments
+      if (outputMode === "direct") {
+        // Direct concatenation
+        const command = ffmpeg();
+        segmentFiles.forEach(file => command.input(file));
+        
+        await new Promise<void>((resolve, reject) => {
+          command
+            .complexFilter([
+              segmentFiles.map((_, i) => `[${i}:a]`).join("") + `concat=n=${segmentFiles.length}:v=0:a=1[out]`
+            ])
+            .outputOptions(["-map", "[out]"])
+            .output(outputPath)
+            .on("end", () => resolve())
+            .on("error", (err) => reject(err))
+            .run();
+        });
+      } else {
+        // Crossfade concatenation
+        const command = ffmpeg();
+        segmentFiles.forEach(file => command.input(file));
+        
+        // Build crossfade filter chain
+        let filterChain = "";
+        for (let i = 0; i < segmentFiles.length - 1; i++) {
+          if (i === 0) {
+            filterChain = `[0:a][1:a]acrossfade=d=${crossfadeDuration}[a01];`;
+          } else {
+            filterChain += `[a0${i}][${i + 1}:a]acrossfade=d=${crossfadeDuration}[a0${i + 1}];`;
+          }
+        }
+        
+        await new Promise<void>((resolve, reject) => {
+          command
+            .complexFilter(filterChain.slice(0, -1)) // Remove last semicolon
+            .outputOptions(["-map", `[a0${segmentFiles.length - 1}]`])
+            .output(outputPath)
+            .on("end", () => resolve())
+            .on("error", (err) => reject(err))
+            .run();
+        });
+      }
+    } finally {
+      // Clean up temp files
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   }
 }

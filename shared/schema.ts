@@ -12,11 +12,10 @@ export const audioFiles = pgTable("audio_files", {
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
 });
 
-export const segments = pgTable("segments", {
+export const markers = pgTable("markers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   audioFileId: varchar("audio_file_id").notNull(),
-  startTime: real("start_time").notNull(),
-  endTime: real("end_time").notNull(),
+  timestamp: real("timestamp").notNull(),
   order: integer("order").notNull(),
 });
 
@@ -36,7 +35,7 @@ export const insertAudioFileSchema = createInsertSchema(audioFiles).omit({
   uploadedAt: true,
 });
 
-export const insertSegmentSchema = createInsertSchema(segments).omit({
+export const insertMarkerSchema = createInsertSchema(markers).omit({
   id: true,
 });
 
@@ -47,39 +46,39 @@ export const insertProcessingJobSchema = createInsertSchema(processingJobs).omit
 });
 
 // Validation schemas
-export const timestampPairSchema = z.object({
-  startTime: z.number().min(0, "Start time must be non-negative"),
-  endTime: z.number().min(0, "End time must be non-negative"),
-}).refine(data => data.startTime < data.endTime, {
-  message: "Start time must be less than end time",
+export const markerSchema = z.object({
+  timestamp: z.number().min(0, "Timestamp must be non-negative"),
+  order: z.number().int().min(0),
 });
 
-export const segmentListSchema = z.array(timestampPairSchema)
-  .min(1, "At least one segment is required")
-  .refine(segments => {
-    // Check for overlapping segments
-    const sorted = segments.sort((a, b) => a.startTime - b.startTime);
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (sorted[i].endTime > sorted[i + 1].startTime) {
-        return false;
-      }
-    }
-    return true;
+export const markerListSchema = z.array(markerSchema)
+  .min(2, "At least two markers are required")
+  .refine(markers => {
+    // Check markers are in ascending order by timestamp
+    const sorted = [...markers].sort((a, b) => a.timestamp - b.timestamp);
+    return markers.every((marker, index) => marker.timestamp === sorted[index].timestamp);
   }, {
-    message: "Segments cannot overlap",
+    message: "Markers must be in ascending order by timestamp",
   });
 
 export const processAudioSchema = z.object({
   audioFileId: z.string(),
-  segments: segmentListSchema,
+  markers: markerListSchema,
   outputMode: z.enum(["direct", "crossfade"]),
   crossfadeDuration: z.number().min(0.1).max(5).optional(),
 });
 
+export const previewAudioSchema = z.object({
+  audioFileId: z.string(),
+  markers: markerListSchema,
+  crossfadeDuration: z.number().min(0.1).max(5).default(1.0),
+});
+
 export type InsertAudioFile = z.infer<typeof insertAudioFileSchema>;
 export type AudioFile = typeof audioFiles.$inferSelect;
-export type InsertSegment = z.infer<typeof insertSegmentSchema>;
-export type Segment = typeof segments.$inferSelect;
+export type InsertMarker = z.infer<typeof insertMarkerSchema>;
+export type Marker = typeof markers.$inferSelect;
 export type InsertProcessingJob = z.infer<typeof insertProcessingJobSchema>;
 export type ProcessingJob = typeof processingJobs.$inferSelect;
 export type ProcessAudioRequest = z.infer<typeof processAudioSchema>;
+export type PreviewAudioRequest = z.infer<typeof previewAudioSchema>;

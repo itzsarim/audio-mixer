@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, MapPin, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { AudioFile } from "@shared/schema";
@@ -9,14 +9,18 @@ import type { AudioFile } from "@shared/schema";
 
 interface WaveformVisualizerProps {
   audioFile: AudioFile;
-  segments: Array<{ startTime: number; endTime: number }>;
-  onSegmentsChange: (segments: Array<{ startTime: number; endTime: number }>) => void;
+  markers: Array<{ timestamp: number; order: number }>;
+  onMarkersChange: (markers: Array<{ timestamp: number; order: number }>) => void;
+  isAddingMarkers: boolean;
+  onDoneAddingMarkers: () => void;
 }
 
 export default function WaveformVisualizer({
   audioFile,
-  segments,
-  onSegmentsChange,
+  markers,
+  onMarkersChange,
+  isAddingMarkers,
+  onDoneAddingMarkers,
 }: WaveformVisualizerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -58,6 +62,14 @@ export default function WaveformVisualizer({
     setCurrentTime(newTime);
   };
 
+  const handleAddMarker = () => {
+    if (!audioRef.current) return;
+    
+    const timestamp = audioRef.current.currentTime;
+    const newMarkers = [...markers, { timestamp, order: markers.length }];
+    onMarkersChange(newMarkers);
+  };
+
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -91,9 +103,38 @@ export default function WaveformVisualizer({
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               <span>{isPlaying ? "Pause" : "Play"}</span>
             </Button>
+            {isAddingMarkers && (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAddMarker}
+                  className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600"
+                  data-testid="button-add-marker"
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span>Add Marker</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onDoneAddingMarkers}
+                  className="flex items-center space-x-2"
+                  data-testid="button-done-markers"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Done Adding</span>
+                </Button>
+              </>
+            )}
             <div className="text-sm text-gray-500 font-mono">
               {formatTime(currentTime)}
             </div>
+            {isAddingMarkers && (
+              <div className="text-xs text-gray-500">
+                {markers.length} markers
+              </div>
+            )}
           </div>
         </div>
 
@@ -124,23 +165,28 @@ export default function WaveformVisualizer({
               {/* Simplified waveform representation */}
               <div className="h-full bg-gradient-to-r from-blue-200 via-blue-300 to-blue-200 rounded opacity-60" />
 
-              {/* Selected segments overlay */}
+              {/* Markers overlay */}
               <div className="absolute top-2 h-full">
-                {segments.map((segment, index) => {
-                  const startPercent = (segment.startTime / audioFile.duration) * 100;
-                  const widthPercent = ((segment.endTime - segment.startTime) / audioFile.duration) * 100;
+                {markers.map((marker, index) => {
+                  const leftPercent = (marker.timestamp / audioFile.duration) * 100;
                   
                   return (
                     <div
                       key={index}
-                      className="segment-overlay"
+                      className="absolute"
                       style={{
-                        left: `${startPercent}%`,
-                        width: `${widthPercent}%`,
+                        left: `${leftPercent}%`,
+                        top: 0,
                         height: "calc(100% - 16px)",
+                        transform: "translateX(-50%)",
                       }}
                     >
-                      <div className="segment-label">Segment {index + 1}</div>
+                      <div className="w-0.5 h-full bg-orange-500 relative">
+                        <div className="absolute -top-1 -left-2 w-4 h-4 bg-orange-500 rounded-full border-2 border-white shadow-sm" />
+                        <div className="absolute top-2 -left-3 w-6 h-4 bg-orange-500 text-white text-xs rounded flex items-center justify-center font-medium">
+                          {index + 1}
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
@@ -156,7 +202,11 @@ export default function WaveformVisualizer({
         </div>
 
         <div className="mt-4 text-sm text-gray-600">
-          <p>Click on the waveform to seek to a specific time. Use the segment manager below to define cut points.</p>
+          {isAddingMarkers ? (
+            <p>Play the audio and click "Add Marker" to mark important moments. Click "Done Adding" when finished.</p>
+          ) : (
+            <p>Click on the waveform to seek to a specific time. {markers.length > 0 && `${markers.length} markers added.`}</p>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -8,11 +8,11 @@ export function useAudioProcessor() {
   const [processingProgress, setProcessingProgress] = useState(0);
 
   // Poll for job status when processing
-  const { data: processingJob, isLoading: isProcessing } = useQuery({
+  const { data: processingJob, isLoading: isProcessing } = useQuery<ProcessingJob>({
     queryKey: ["/api/jobs", currentJobId],
     enabled: !!currentJobId,
     refetchInterval: (data) => {
-      if (!data || data.status === "completed" || data.status === "failed") {
+      if (!data?.data || data.data.status === "completed" || data.data.status === "failed") {
         return false; // Stop polling
       }
       return 1000; // Poll every second

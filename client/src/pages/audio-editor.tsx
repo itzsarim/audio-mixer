@@ -5,14 +5,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import ProgressSteps from "@/components/progress-steps";
 import WaveformVisualizer from "@/components/waveform-visualizer";
-import SegmentManager from "@/components/segment-manager";
+import MarkerManager from "@/components/marker-manager";
 import { useAudioProcessor } from "@/hooks/use-audio-processor";
 import type { AudioFile } from "@shared/schema";
 
 export default function AudioEditor() {
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const [segments, setSegments] = useState<Array<{ startTime: number; endTime: number }>>([]);
+  const [markers, setMarkers] = useState<Array<{ timestamp: number; order: number }>>([]);
+  const [isAddingMarkers, setIsAddingMarkers] = useState(false);
   const [outputMode, setOutputMode] = useState<"direct" | "crossfade">("direct");
   const [crossfadeDuration, setCrossfadeDuration] = useState(1.0);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -93,11 +94,11 @@ export default function AudioEditor() {
   };
 
   const handleProcessAudio = async () => {
-    if (!audioFile || segments.length === 0) return;
+    if (!audioFile || markers.length < 2) return;
 
     const jobId = await processAudio({
       audioFileId: audioFile.id,
-      segments,
+      markers: markers.sort((a, b) => a.timestamp - b.timestamp),
       outputMode,
       crossfadeDuration: outputMode === "crossfade" ? crossfadeDuration : undefined,
     });
@@ -110,8 +111,9 @@ export default function AudioEditor() {
   const handleStartOver = () => {
     setAudioFile(null);
     setCurrentStep(1);
-    setSegments([]);
-    setOutputMode("direct");
+    setMarkers([]);
+    setIsAddingMarkers(false);
+    setOutputMode("crossfade");
     setCrossfadeDuration(1.0);
     setUploadProgress(0);
     setIsUploading(false);
@@ -228,28 +230,34 @@ export default function AudioEditor() {
         {audioFile && currentStep >= 2 && (
           <WaveformVisualizer
             audioFile={audioFile}
-            segments={segments}
-            onSegmentsChange={(newSegments) => {
-              setSegments(newSegments);
-              if (newSegments.length > 0 && currentStep === 2) {
+            markers={markers}
+            onMarkersChange={setMarkers}
+            isAddingMarkers={isAddingMarkers}
+            onDoneAddingMarkers={() => {
+              setIsAddingMarkers(false);
+              if (markers.length >= 2) {
                 setCurrentStep(3);
               }
             }}
           />
         )}
 
-        {/* Segment Management */}
+        {/* Marker Management */}
         {audioFile && currentStep >= 2 && (
-          <SegmentManager
-            segments={segments}
-            onSegmentsChange={setSegments}
+          <MarkerManager
+            markers={markers}
+            onMarkersChange={setMarkers}
             audioDuration={audioFile.duration}
-            onProceedToNext={() => setCurrentStep(3)}
+            audioFileId={audioFile.id}
+            onStartAddingMarkers={() => setIsAddingMarkers(true)}
+            onPreviewMix={() => {/* Preview handled internally */}}
+            onGenerateAudio={() => setCurrentStep(3)}
+            isAddingMarkers={isAddingMarkers}
           />
         )}
 
         {/* Output Configuration */}
-        {segments.length > 0 && currentStep >= 3 && (
+        {markers.length >= 2 && currentStep >= 3 && (
           <Card className="mb-8">
             <CardContent className="p-6">
               <div className="mb-6">
@@ -331,7 +339,7 @@ export default function AudioEditor() {
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-600">
-                    Ready to process <span className="font-medium">{segments.length} segments</span> • 
+                    Ready to process <span className="font-medium">{Math.max(0, markers.length - 1)} segments</span> from <span className="font-medium">{markers.length} markers</span> • 
                     Estimated time: <span className="font-medium">~5 seconds</span>
                   </div>
                   <Button onClick={handleProcessAudio} className="bg-green-600 hover:bg-green-700">
@@ -369,7 +377,7 @@ export default function AudioEditor() {
         )}
 
         {/* Download Section */}
-        {processingJob && 'status' in processingJob && processingJob.status === "completed" && (
+        {processingJob && processingJob.status === "completed" && (
           <Card>
             <CardContent className="p-6">
               <div className="text-center space-y-6">
@@ -394,7 +402,7 @@ export default function AudioEditor() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Button onClick={() => 'id' in processingJob && downloadAudio(processingJob.id)}>
+                  <Button onClick={() => processingJob?.id && downloadAudio(processingJob.id)}>
                     <Download className="h-4 w-4 mr-2" />
                     Download Audio
                   </Button>
