@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Trash2, Clock, Play, Edit3, Save, X, Volume2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Trash2, Clock, Play, Edit3, Save, X, Volume2, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,9 @@ export default function MarkerManager({
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedJobId, setGeneratedJobId] = useState<string | null>(null);
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
   const { toast } = useToast();
 
   const formatTime = (seconds: number) => {
@@ -81,6 +84,25 @@ export default function MarkerManager({
     setEditingIndex(null);
   };
 
+  const handlePreviewPlayPause = () => {
+    if (previewAudioRef.current) {
+      if (isPreviewPlaying) {
+        previewAudioRef.current.pause();
+      } else {
+        previewAudioRef.current.play();
+      }
+      setIsPreviewPlaying(!isPreviewPlaying);
+    }
+  };
+
+  const handleStopPreview = () => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+      setIsPreviewPlaying(false);
+    }
+  };
+
   const handleGenerateAudio = async () => {
     if (!isEvenMarkers || segmentCount < 1) {
       toast({
@@ -91,6 +113,13 @@ export default function MarkerManager({
         variant: "destructive",
       });
       return;
+    }
+
+    // Stop and reset preview audio when generating
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+      setIsPreviewPlaying(false);
     }
 
     setIsGenerating(true);
@@ -179,12 +208,11 @@ export default function MarkerManager({
       // Create audio element and play the preview
       const blob = await response.blob();
       const audioUrl = URL.createObjectURL(blob);
-      const audio = new Audio(audioUrl);
-      audio.play();
+      setPreviewAudioUrl(audioUrl);
 
       toast({
         title: "Preview ready",
-        description: "Playing crossfaded preview",
+        description: "Click play to listen to your mixed audio preview",
       });
 
       onPreviewMix();
@@ -486,16 +514,42 @@ export default function MarkerManager({
                 </Button>
                 
                 {isEvenMarkers && segmentCount >= 1 && (
-                  <Button 
-                    onClick={handlePreviewMix}
-                    variant="outline"
-                    disabled={isPreviewLoading}
-                    className="flex items-center justify-center space-x-2"
-                    data-testid="button-preview-mix"
-                  >
-                    <Volume2 className="h-4 w-4" />
-                    <span>{isPreviewLoading ? "Generating..." : "Preview Mix"}</span>
-                  </Button>
+                  <>
+                    {!previewAudioUrl ? (
+                      <Button 
+                        onClick={handlePreviewMix}
+                        variant="outline"
+                        disabled={isPreviewLoading}
+                        className="flex items-center justify-center space-x-2"
+                        data-testid="button-preview-mix"
+                      >
+                        <Volume2 className="h-4 w-4" />
+                        <span>{isPreviewLoading ? "Generating..." : "Preview Mix"}</span>
+                      </Button>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          onClick={handlePreviewPlayPause}
+                          variant="outline"
+                          className="flex items-center justify-center space-x-2"
+                          data-testid="button-preview-play-pause"
+                        >
+                          {isPreviewPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                          <span>{isPreviewPlaying ? "Pause" : "Play"} Preview</span>
+                        </Button>
+                        <Button 
+                          onClick={handleStopPreview}
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center justify-center space-x-1"
+                          data-testid="button-stop-preview"
+                        >
+                          <Square className="h-3 w-3" />
+                          <span>Stop</span>
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -527,6 +581,18 @@ export default function MarkerManager({
           </div>
         )}
       </CardContent>
+      
+      {/* Hidden audio element for preview playback */}
+      {previewAudioUrl && (
+        <audio
+          ref={previewAudioRef}
+          src={previewAudioUrl}
+          onPlay={() => setIsPreviewPlaying(true)}
+          onPause={() => setIsPreviewPlaying(false)}
+          onEnded={() => setIsPreviewPlaying(false)}
+          preload="metadata"
+        />
+      )}
     </Card>
   );
 }
