@@ -5,9 +5,7 @@ interface ProgressStepsProps {
 export default function ProgressSteps({ currentStep }: ProgressStepsProps) {
   const steps = [
     { number: 1, label: "Upload Audio" },
-    { number: 2, label: "Select Segments" },
-    { number: 3, label: "Configure Output" },
-    { number: 4, label: "Download" },
+    { number: 2, label: "Create Mix" },
   ];
 
   return (

@@ -14,6 +14,7 @@ interface MarkerManagerProps {
   onStartAddingMarkers: () => void;
   onPreviewMix: () => void;
   onGenerateAudio: () => void;
+  onDownloadAudio: (jobId: string) => void;
   isAddingMarkers: boolean;
 }
 
@@ -25,10 +26,13 @@ export default function MarkerManager({
   onStartAddingMarkers,
   onPreviewMix,
   onGenerateAudio,
+  onDownloadAudio,
   isAddingMarkers,
 }: MarkerManagerProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedJobId, setGeneratedJobId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const formatTime = (seconds: number) => {
@@ -73,6 +77,69 @@ export default function MarkerManager({
     );
     onMarkersChange(newMarkers);
     setEditingIndex(null);
+  };
+
+  const handleGenerateAudio = async () => {
+    if (sortedMarkers.length < 2) {
+      toast({
+        title: "Need more markers",
+        description: "At least 2 markers are required to generate audio",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch("/api/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          audioFileId,
+          markers: sortedMarkers,
+          outputMode: "crossfade",
+          crossfadeDuration: 1.0,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate audio");
+      }
+
+      const result = await response.json();
+      setGeneratedJobId(result.jobId);
+      
+      // Poll for completion
+      const pollStatus = async () => {
+        const statusResponse = await fetch(`/api/jobs/${result.jobId}`);
+        const job = await statusResponse.json();
+        
+        if (job.status === "completed") {
+          toast({
+            title: "Audio ready!",
+            description: "Your mixed audio file is ready to download",
+          });
+          setIsGenerating(false);
+        } else if (job.status === "failed") {
+          throw new Error("Processing failed");
+        } else {
+          setTimeout(pollStatus, 1000);
+        }
+      };
+      
+      pollStatus();
+      onGenerateAudio();
+    } catch (error) {
+      console.error("Generate error:", error);
+      toast({
+        title: "Generation failed",
+        description: "Could not generate audio. Please try again.",
+        variant: "destructive",
+      });
+      setIsGenerating(false);
+    }
   };
 
   const handlePreviewMix = async () => {
@@ -299,14 +366,28 @@ export default function MarkerManager({
               </div>
 
               {sortedMarkers.length >= 2 && (
-                <Button 
-                  onClick={onGenerateAudio}
-                  className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
-                  data-testid="button-generate-audio"
-                >
-                  <span>Generate Final Audio</span>
-                  <Play className="h-4 w-4 ml-2" />
-                </Button>
+                <>
+                  {!generatedJobId ? (
+                    <Button 
+                      onClick={handleGenerateAudio}
+                      disabled={isGenerating}
+                      className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
+                      data-testid="button-generate-audio"
+                    >
+                      <span>{isGenerating ? "Generating..." : "Generate & Download"}</span>
+                      <Play className="h-4 w-4 ml-2" />
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => onDownloadAudio(generatedJobId)}
+                      className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                      data-testid="button-download-audio"
+                    >
+                      <span>Download Audio</span>
+                      <Play className="h-4 w-4 ml-2" />
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </div>

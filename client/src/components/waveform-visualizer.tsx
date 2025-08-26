@@ -152,10 +152,19 @@ export default function WaveformVisualizer({
           >
             {/* Time markers */}
             <div className="absolute top-0 left-0 right-0 h-6 border-b border-gray-200 flex items-center">
-              <div className="flex justify-between w-full px-2 text-xs text-gray-500 font-mono">
-                {Array.from({ length: 9 }, (_, i) => {
-                  const time = (i * audioFile.duration) / 8;
-                  return <span key={i}>{formatTime(time)}</span>;
+              <div className="relative w-full px-2 text-xs text-gray-500 font-mono">
+                {Array.from({ length: Math.min(Math.ceil(audioFile.duration), 20) }, (_, i) => {
+                  const time = (i * audioFile.duration) / (Math.min(Math.ceil(audioFile.duration), 20) - 1);
+                  const leftPercent = (time / audioFile.duration) * 100;
+                  return (
+                    <span 
+                      key={i} 
+                      className="absolute transform -translate-x-1/2"
+                      style={{ left: `${leftPercent}%` }}
+                    >
+                      {Math.floor(time)}s
+                    </span>
+                  );
                 })}
               </div>
             </div>
