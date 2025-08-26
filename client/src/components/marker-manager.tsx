@@ -379,64 +379,62 @@ export default function MarkerManager({
                           {formatTimeDisplay(startMarker.timestamp)}
                         </div>
                         {editingIndex === markers.findIndex(m => m.timestamp === startMarker.timestamp) && (
-                          <div className="flex items-center space-x-3 mt-3 p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-2">
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Min</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  defaultValue={formatTime(startMarker.timestamp).mins}
-                                  className="w-16 h-9 text-sm text-center"
-                                  data-testid={`input-start-minutes-${segmentIndex}`}
-                                />
-                              </div>
-                              <span className="text-lg text-gray-500 mt-4">:</span>
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Sec</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  max="59"
-                                  defaultValue={formatTime(startMarker.timestamp).secs}
-                                  className="w-16 h-9 text-sm text-center"
-                                  data-testid={`input-start-seconds-${segmentIndex}`}
-                                />
-                              </div>
-                              <span className="text-lg text-gray-500 mt-4">.</span>
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Ms</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  max="999"
-                                  defaultValue={formatTime(startMarker.timestamp).ms}
-                                  className="w-20 h-9 text-sm text-center"
-                                  data-testid={`input-start-milliseconds-${segmentIndex}`}
-                                />
-                              </div>
+                          <div className="flex items-center justify-center space-x-2 mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Min</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                value={formatTime(startMarker.timestamp).mins}
+                                onChange={(e) => {
+                                  const mins = parseInt(e.target.value) || 0;
+                                  const { secs, ms } = formatTime(startMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-16 h-8 text-sm text-center"
+                                data-testid={`input-start-minutes-${segmentIndex}`}
+                              />
                             </div>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => {
-                                const minutesInput = document.querySelector(`[data-testid="input-start-minutes-${segmentIndex}"]`) as HTMLInputElement;
-                                const secondsInput = document.querySelector(`[data-testid="input-start-seconds-${segmentIndex}"]`) as HTMLInputElement;
-                                const millisecondsInput = document.querySelector(`[data-testid="input-start-milliseconds-${segmentIndex}"]`) as HTMLInputElement;
-                                const mins = parseInt(minutesInput.value) || 0;
-                                const secs = parseInt(secondsInput.value) || 0;
-                                const ms = parseInt(millisecondsInput.value) || 0;
-                                const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
-                                updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
-                              }}
-                              className="h-9 bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <Save className="h-4 w-4 mr-1" />
-                              Save
-                            </Button>
+                            <span className="text-lg text-gray-500 mt-4">:</span>
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Sec</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="59"
+                                value={formatTime(startMarker.timestamp).secs}
+                                onChange={(e) => {
+                                  const secs = parseInt(e.target.value) || 0;
+                                  const { mins, ms } = formatTime(startMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-16 h-8 text-sm text-center"
+                                data-testid={`input-start-seconds-${segmentIndex}`}
+                              />
+                            </div>
+                            <span className="text-lg text-gray-500 mt-4">.</span>
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Ms</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="999"
+                                value={formatTime(startMarker.timestamp).ms}
+                                onChange={(e) => {
+                                  const ms = parseInt(e.target.value) || 0;
+                                  const { mins, secs } = formatTime(startMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === startMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-20 h-8 text-sm text-center"
+                                data-testid={`input-start-milliseconds-${segmentIndex}`}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -477,64 +475,62 @@ export default function MarkerManager({
                           {formatTimeDisplay(endMarker.timestamp)}
                         </div>
                         {editingIndex === markers.findIndex(m => m.timestamp === endMarker.timestamp) && (
-                          <div className="flex items-center space-x-3 mt-3 p-3 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-2">
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Min</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  defaultValue={formatTime(endMarker.timestamp).mins}
-                                  className="w-16 h-9 text-sm text-center"
-                                  data-testid={`input-end-minutes-${segmentIndex}`}
-                                />
-                              </div>
-                              <span className="text-lg text-gray-500 mt-4">:</span>
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Sec</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  max="59"
-                                  defaultValue={formatTime(endMarker.timestamp).secs}
-                                  className="w-16 h-9 text-sm text-center"
-                                  data-testid={`input-end-seconds-${segmentIndex}`}
-                                />
-                              </div>
-                              <span className="text-lg text-gray-500 mt-4">.</span>
-                              <div className="flex flex-col items-center">
-                                <Label className="text-xs text-gray-500 mb-1">Ms</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="0"
-                                  min="0"
-                                  max="999"
-                                  defaultValue={formatTime(endMarker.timestamp).ms}
-                                  className="w-20 h-9 text-sm text-center"
-                                  data-testid={`input-end-milliseconds-${segmentIndex}`}
-                                />
-                              </div>
+                          <div className="flex items-center justify-center space-x-2 mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Min</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                value={formatTime(endMarker.timestamp).mins}
+                                onChange={(e) => {
+                                  const mins = parseInt(e.target.value) || 0;
+                                  const { secs, ms } = formatTime(endMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-16 h-8 text-sm text-center"
+                                data-testid={`input-end-minutes-${segmentIndex}`}
+                              />
                             </div>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => {
-                                const minutesInput = document.querySelector(`[data-testid="input-end-minutes-${segmentIndex}"]`) as HTMLInputElement;
-                                const secondsInput = document.querySelector(`[data-testid="input-end-seconds-${segmentIndex}"]`) as HTMLInputElement;
-                                const millisecondsInput = document.querySelector(`[data-testid="input-end-milliseconds-${segmentIndex}"]`) as HTMLInputElement;
-                                const mins = parseInt(minutesInput.value) || 0;
-                                const secs = parseInt(secondsInput.value) || 0;
-                                const ms = parseInt(millisecondsInput.value) || 0;
-                                const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
-                                updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
-                              }}
-                              className="h-9 bg-red-600 hover:bg-red-700 text-white"
-                            >
-                              <Save className="h-4 w-4 mr-1" />
-                              Save
-                            </Button>
+                            <span className="text-lg text-gray-500 mt-4">:</span>
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Sec</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="59"
+                                value={formatTime(endMarker.timestamp).secs}
+                                onChange={(e) => {
+                                  const secs = parseInt(e.target.value) || 0;
+                                  const { mins, ms } = formatTime(endMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-16 h-8 text-sm text-center"
+                                data-testid={`input-end-seconds-${segmentIndex}`}
+                              />
+                            </div>
+                            <span className="text-lg text-gray-500 mt-4">.</span>
+                            <div className="flex flex-col items-center">
+                              <Label className="text-xs text-gray-500 mb-1">Ms</Label>
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                min="0"
+                                max="999"
+                                value={formatTime(endMarker.timestamp).ms}
+                                onChange={(e) => {
+                                  const ms = parseInt(e.target.value) || 0;
+                                  const { mins, secs } = formatTime(endMarker.timestamp);
+                                  const originalIndex = markers.findIndex(m => m.timestamp === endMarker.timestamp);
+                                  updateMarkerTime(originalIndex, parseTime(mins, secs, ms));
+                                }}
+                                className="w-20 h-8 text-sm text-center"
+                                data-testid={`input-end-milliseconds-${segmentIndex}`}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
