@@ -11,6 +11,7 @@ interface MarkerManagerProps {
   onMarkersChange: (markers: Array<{ timestamp: number; order: number }>) => void;
   audioDuration: number;
   audioFileId: string;
+  originalFile?: File | null;
   onStartAddingMarkers: () => void;
   onPreviewMix: () => void;
   onGenerateAudio: () => void;
@@ -23,6 +24,7 @@ export default function MarkerManager({
   onMarkersChange,
   audioDuration,
   audioFileId,
+  originalFile,
   onStartAddingMarkers,
   onPreviewMix,
   onGenerateAudio,
@@ -140,46 +142,31 @@ export default function MarkerManager({
 
     setIsGenerating(true);
     try {
-      const response = await fetch("/api/process", {
+      if (!originalFile) throw new Error("No original file found");
+      const form = new FormData();
+      form.append("audio", originalFile);
+      form.append("markers", JSON.stringify(sortedMarkers));
+      form.append("outputMode", outputMode);
+      form.append("crossfadeDuration", String(crossfadeDuration));
+
+      const response = await fetch("/api/process-upload", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          audioFileId,
-          markers: sortedMarkers,
-          outputMode,
-          crossfadeDuration,
-        }),
+        body: form,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to generate audio");
-      }
+      if (!response.ok) throw new Error("Failed to generate audio");
 
-      const result = await response.json();
-      setGeneratedJobId(result.jobId);
-      
-      // Poll for completion
-      const pollStatus = async () => {
-        const statusResponse = await fetch(`/api/jobs/${result.jobId}`);
-        const job = await statusResponse.json();
-        
-        if (job.status === "completed") {
-          toast({
-            title: "Audio ready!",
-            description: "Your mixed audio file is ready to download",
-          });
-          setIsGenerating(false);
-        } else if (job.status === "failed") {
-          throw new Error("Processing failed");
-        } else {
-          setTimeout(pollStatus, 1000);
-        }
-      };
-      
-      pollStatus();
-      onGenerateAudio();
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `mixed-audio-${crypto.randomUUID()}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setIsGenerating(false);
+      toast({ title: "Download started", description: "Your audio is downloading." });
     } catch (error) {
       console.error("Generate error:", error);
       toast({
@@ -205,24 +192,15 @@ export default function MarkerManager({
 
     setIsPreviewLoading(true);
     try {
-      const response = await fetch("/api/preview", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          audioFileId,
-          markers: sortedMarkers,
-          outputMode,
-          crossfadeDuration,
-        }),
-      });
+      if (!originalFile) throw new Error("No original file found");
+      const form = new FormData();
+      form.append("audio", originalFile);
+      form.append("markers", JSON.stringify(sortedMarkers));
+      form.append("outputMode", outputMode);
+      form.append("crossfadeDuration", String(crossfadeDuration));
 
-      if (!response.ok) {
-        throw new Error("Failed to generate preview");
-      }
-
-      // Create audio element and play the preview
+      const response = await fetch("/api/process-upload", { method: "POST", body: form });
+      if (!response.ok) throw new Error("Failed to generate preview");
       const blob = await response.blob();
       const audioUrl = URL.createObjectURL(blob);
       setPreviewAudioUrl(audioUrl);

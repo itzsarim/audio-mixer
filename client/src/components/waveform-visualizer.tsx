@@ -6,6 +6,7 @@ import type { AudioFile } from "@shared/schema";
 
 interface WaveformVisualizerProps {
   audioFile: AudioFile;
+  audioSrc: string; // local blob URL
   markers: Array<{ timestamp: number; order: number }>;
   onMarkersChange: (markers: Array<{ timestamp: number; order: number }>) => void;
   isAddingMarkers: boolean;
@@ -14,6 +15,7 @@ interface WaveformVisualizerProps {
 
 export default function WaveformVisualizer({
   audioFile,
+  audioSrc,
   markers,
   onMarkersChange,
   isAddingMarkers,
@@ -173,11 +175,7 @@ export default function WaveformVisualizer({
           </div>
         </div>
 
-        <audio
-          ref={audioRef}
-          src={`/api/audio/${audioFile.id}/file`}
-          preload="metadata"
-        />
+        <audio ref={audioRef} src={audioSrc} preload="metadata" />
 
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
           <div

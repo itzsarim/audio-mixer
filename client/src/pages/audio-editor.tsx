@@ -11,6 +11,8 @@ import type { AudioFile } from "@shared/schema";
 
 export default function AudioEditor() {
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [markers, setMarkers] = useState<Array<{ timestamp: number; order: number }>>([]);
   const [isAddingMarkers, setIsAddingMarkers] = useState(false);
@@ -33,42 +35,33 @@ export default function AudioEditor() {
     setIsUploading(true);
     setUploadProgress(0);
 
-    const formData = new FormData();
-    formData.append("audio", file);
-
     try {
-      const xhr = new XMLHttpRequest();
-      
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) {
-          const progress = (e.loaded / e.total) * 100;
-          setUploadProgress(progress);
-        }
+      // Create a local object URL for playback and duration detection
+      const url = URL.createObjectURL(file);
+      setAudioSrc(url);
+      setOriginalFile(file);
+      // Measure duration using an off-DOM audio element
+      const duration = await new Promise<number>((resolve, reject) => {
+        const audio = new Audio();
+        audio.preload = "metadata";
+        audio.src = url;
+        audio.onloadedmetadata = () => resolve(audio.duration || 0);
+        audio.onerror = () => reject(new Error("Failed to load audio metadata"));
       });
 
-      xhr.addEventListener("load", () => {
-        setIsUploading(false);
-        if (xhr.status === 200) {
-          try {
-            const result = JSON.parse(xhr.responseText);
-            console.log("Upload successful:", result);
-            setAudioFile(result);
-            setCurrentStep(2);
-          } catch (error) {
-            console.error("Failed to parse upload response:", error, xhr.responseText);
-          }
-        } else {
-          console.error("Upload failed with status:", xhr.status, xhr.responseText);
-        }
-      });
+      const faux: AudioFile = {
+        id: crypto.randomUUID(),
+        filename: file.name,
+        originalName: file.name,
+        duration,
+        format: file.type.includes("wav") ? ".wav" : ".mp3",
+        uploadedAt: new Date(),
+      } as any;
 
-      xhr.addEventListener("error", () => {
-        setIsUploading(false);
-        console.error("Upload network error");
-      });
-
-      xhr.open("POST", "/api/upload");
-      xhr.send(formData);
+      setAudioFile(faux);
+      setCurrentStep(2);
+      setIsUploading(false);
+      setUploadProgress(100);
     } catch (error) {
       setIsUploading(false);
       console.error("Upload error:", error);
@@ -117,6 +110,9 @@ export default function AudioEditor() {
     setCrossfadeDuration(1.0);
     setUploadProgress(0);
     setIsUploading(false);
+    if (audioSrc) URL.revokeObjectURL(audioSrc);
+    setAudioSrc(null);
+    setOriginalFile(null);
   };
 
   const formatDuration = (seconds: number) => {
@@ -230,6 +226,7 @@ export default function AudioEditor() {
         {audioFile && currentStep >= 2 && (
           <WaveformVisualizer
             audioFile={audioFile}
+            audioSrc={audioSrc || ""}
             markers={markers}
             onMarkersChange={setMarkers}
             isAddingMarkers={isAddingMarkers}
@@ -249,6 +246,7 @@ export default function AudioEditor() {
             onMarkersChange={setMarkers}
             audioDuration={audioFile.duration}
             audioFileId={audioFile.id}
+            originalFile={originalFile}
             onStartAddingMarkers={() => setIsAddingMarkers(true)}
             onPreviewMix={() => {/* Preview handled internally */}}
             onGenerateAudio={() => {}}
