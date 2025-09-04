@@ -36,30 +36,58 @@ export default function AudioEditor() {
     setUploadProgress(0);
 
     try {
-      // Create a local object URL for playback and duration detection
-      const url = URL.createObjectURL(file);
-      setAudioSrc(url);
-      setOriginalFile(file);
-      // Measure duration using an off-DOM audio element
-      const duration = await new Promise<number>((resolve, reject) => {
-        const audio = new Audio();
-        audio.preload = "metadata";
-        audio.src = url;
-        audio.onloadedmetadata = () => resolve(audio.duration || 0);
-        audio.onerror = () => reject(new Error("Failed to load audio metadata"));
-      });
+      if (import.meta.env.DEV) {
+        // Development: upload to local Express server and use server audio URL
+        const formData = new FormData();
+        formData.append("audio", file);
 
-      const faux: AudioFile = {
-        id: crypto.randomUUID(),
-        filename: file.name,
-        originalName: file.name,
-        duration,
-        format: file.type.includes("wav") ? ".wav" : ".mp3",
-        uploadedAt: new Date(),
-      } as any;
-
-      setAudioFile(faux);
-      setCurrentStep(2);
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener("progress", (e) => {
+            if (e.lengthComputable) setUploadProgress((e.loaded / e.total) * 100);
+          });
+          xhr.addEventListener("load", () => {
+            if (xhr.status === 200) {
+              try {
+                const result = JSON.parse(xhr.responseText);
+                setAudioFile(result);
+                setAudioSrc(`/api/audio/${result.id}/file`);
+                setCurrentStep(2);
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            } else {
+              reject(new Error(`Upload failed with status ${xhr.status}`));
+            }
+          });
+          xhr.addEventListener("error", () => reject(new Error("Upload network error")));
+          xhr.open("POST", "/api/upload");
+          xhr.send(formData);
+        });
+      } else {
+        // Production (Vercel): keep file client-side and use blob URL
+        const url = URL.createObjectURL(file);
+        setAudioSrc(url);
+        setOriginalFile(file);
+        const duration = await new Promise<number>((resolve, reject) => {
+          const audio = new Audio();
+          audio.preload = "metadata";
+          audio.src = url;
+          audio.onloadedmetadata = () => resolve(audio.duration || 0);
+          audio.onerror = () => reject(new Error("Failed to load audio metadata"));
+        });
+        const faux: AudioFile = {
+          id: crypto.randomUUID(),
+          filename: file.name,
+          originalName: file.name,
+          duration,
+          format: file.type.includes("wav") ? ".wav" : ".mp3",
+          uploadedAt: new Date(),
+        } as any;
+        setAudioFile(faux);
+        setCurrentStep(2);
+      }
       setIsUploading(false);
       setUploadProgress(100);
     } catch (error) {
