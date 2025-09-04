@@ -12,7 +12,7 @@ if (ffprobeStatic?.path) ffmpeg.setFfprobePath(ffprobeStatic.path);
 function parseMultipart(req: VercelRequest): Promise<{ file: Buffer; filename: string; fields: Record<string, string> }>{
   return new Promise((resolve, reject) => {
     const busboy = Busboy({ headers: req.headers as any });
-    let fileBufferChunks: Buffer[] = [];
+    const fileBufferChunks: Buffer[] = [];
     let filename = "upload.bin";
     const fields: Record<string, string> = {};
 
@@ -20,6 +20,7 @@ function parseMultipart(req: VercelRequest): Promise<{ file: Buffer; filename: s
       filename = info.filename || filename;
       file.on("data", (data: Buffer) => fileBufferChunks.push(data));
       file.on("limit", () => reject(new Error("File too large")));
+      file.on("error", reject);
     });
 
     busboy.on("field", (name, value) => {
@@ -32,7 +33,8 @@ function parseMultipart(req: VercelRequest): Promise<{ file: Buffer; filename: s
 
     busboy.on("error", reject);
 
-    (busboy as any).end(req.body);
+    // Vercel Node API provides an IncomingMessage stream; pipe it into busboy
+    (req as any).pipe(busboy);
   });
 }
 
@@ -48,6 +50,12 @@ function parseMarkers(raw: string | undefined): Array<{ timestamp: number; order
     return [];
   }
 }
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
